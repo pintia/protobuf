@@ -193,6 +193,8 @@ void MessageBuilderGenerator::Generate(io::Printer* printer) {
         .GenerateBuilderMembers(printer);
   }
 
+  GenerateValidateAssignments(printer);
+
   if (context_->options().opensource_runtime) {
     // Override methods declared in GeneratedMessage to return the concrete
     // generated type so callsites won't depend on GeneratedMessage. This
@@ -221,6 +223,41 @@ void MessageBuilderGenerator::Generate(io::Printer* printer) {
 
   printer->Outdent();
   printer->Print("}\n");
+}
+
+// ===================================================================
+
+void MessageBuilderGenerator::GenerateValidateAssignments(io::Printer * printer) {
+    printer->Print(
+        "public Builder validateAssignments() {\n"
+    );
+    printer->Indent();
+    {
+        int currentBit = 0;
+        for (int i = 0; i < descriptor_->field_count(); i++) {
+            const FieldDescriptor* field = descriptor_->field(i);
+            int numBits =
+                field_generators_.get(field).GetNumBitsForBuilder();
+            if (numBits == 0) {
+                continue;
+            }
+            int currentInt = currentBit / 32;
+            if (!FieldDescriptorLegacy(field).has_optional_keyword() && !field->is_repeated()) {
+                printer->Print(
+                    "if (($bit_field_name$ & $bit_field_mask$) == 0) {\n"
+                    "  throw new RuntimeException(\n"
+                    "    \"Field of bit number $bit_field_name$ $bit_field_mask$ not assigned.\");\n"
+                    "}\n",
+                    "bit_field_name", GetBitFieldName(currentInt),
+                    "bit_field_mask", absl::StrCat("0x", absl::Hex(1 << currentBit % 32, absl::kZeroPad8))
+                );
+            }
+            currentBit += numBits;
+        }
+        printer->Print("return this;\n");
+    }
+    printer->Outdent();
+    printer->Print("}\n");
 }
 
 // ===================================================================
